@@ -103,6 +103,7 @@ const UNPROM = {9:1,10:2,11:3,12:4,13:6,14:7};
 // 先手=1 後手=-1
 // board[row][col] = {piece, side} | null
 let board, turn, sentHand, goteHand, selected, selectedType, gameOver, lastMove;
+let positionCounts;
 let playerSide = 1;
 let aiWorker=null;
 let aiRequestId=0;
@@ -122,9 +123,10 @@ function initGame(){
   for(let c=0;c<9;c++){board[6][c]={piece:PIECES.FU,side:1}}
   board[7][7]={piece:PIECES.HI,side:1};board[7][1]={piece:PIECES.KAKU,side:1};
   for(let c=0;c<9;c++){board[8][c]={piece:backRow[8-c],side:1}}
-  sentHand={};goteHand={};selected=null;selectedType=null;gameOver=false;lastMove=null;
+  sentHand={};goteHand={};positionCounts=new Map();selected=null;selectedType=null;gameOver=false;lastMove=null;
   turn=1;
   playerSide = document.getElementById('side').value==='sente'?1:-1;
+  recordPosition();
   render();
   if(playerSide !== 1){
     setTimeout(aiMove,300);
@@ -132,6 +134,31 @@ function initGame(){
 }
 
 function getHand(side){return side===1?sentHand:goteHand}
+
+function handKey(hand){
+  return Object.keys(hand).sort((a,b)=>Number(a)-Number(b)).map(piece=>piece+':'+(hand[piece]||0)).join(',');
+}
+
+function positionKey(){
+  const boardKey=board.map(row=>row.map(cell=>cell?cell.piece+','+cell.side:'0').join('/')).join('|');
+  return boardKey+'|S:'+handKey(sentHand)+'|G:'+handKey(goteHand)+'|T:'+turn;
+}
+
+function recordPosition(){
+  const key=positionKey();
+  const count=(positionCounts.get(key)||0)+1;
+  positionCounts.set(key,count);
+  return count>=4;
+}
+
+function finishMove(){
+  if(recordPosition()){
+    document.getElementById('status').textContent='千日手です。引き分け！';
+    gameOver=true;
+    return true;
+  }
+  return false;
+}
 
 function addHand(side,piece){
   const up = UNPROM[piece]||piece;
@@ -374,6 +401,10 @@ function handleAIResult(bestMove){
     turn=playerSide;
   }
   document.getElementById('thinking').textContent='';
+  if(finishMove()){
+    render();
+    return;
+  }
   checkGameState();
   render();
 }
@@ -414,6 +445,8 @@ function handleCellClick(r,c){
         const [nb,nsh,ngh]=applyMove(board,m,playerSide,sentHand,goteHand);
         board=nb;sentHand=nsh;goteHand=ngh;
         lastMove=[r,c];selected=null;selectedType=null;turn=-playerSide;
+        const repeated=finishMove();
+        if(repeated){render();return;}
         checkGameState();render();
         if(!gameOver)setTimeout(aiMove,200);
         return;
@@ -434,6 +467,8 @@ function handleCellClick(r,c){
       const [nb,nsh,ngh]=applyMove(board,m,playerSide,sentHand,goteHand);
       board=nb;sentHand=nsh;goteHand=ngh;
       lastMove=[r,c];selected=null;selectedType=null;turn=-playerSide;
+      const repeated=finishMove();
+      if(repeated){render();return;}
       checkGameState();render();
       if(!gameOver)setTimeout(aiMove,200);
       return;
