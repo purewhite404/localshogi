@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>将棋AI</title>
+<style>
+:root{
+  --font-sans:system-ui,-apple-system,"Segoe UI","Noto Sans JP",sans-serif;
+  --text-primary:#1f2937;
+  --text-secondary:#4b5563;
+  --text-muted:#6b7280;
+  --surface-1:#ffffff;
+  --surface-2:#f8fafc;
+  --border:#cbd5e1;
+  --border-strong:#94a3b8;
+  --border-stronger:#64748b;
+  --border-accent:#2563eb;
+  --bg-accent:#dbeafe;
+  --bg-warning:#fef3c7;
+  --radius:4px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:#f1f5f9;color:var(--text-primary)}
+#app{display:flex;flex-direction:column;align-items:center;padding:1rem 0;gap:12px}
+h2{font-size:16px;font-weight:500;color:var(--text-primary)}
+#status{font-size:14px;color:var(--text-secondary);min-height:20px;text-align:center}
+#controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
+#controls label{font-size:13px;color:var(--text-secondary)}
+#controls select{font-size:13px;padding:4px 8px;border:0.5px solid var(--border-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text-primary)}
+#controls button{font-size:13px;padding:5px 14px;border:0.5px solid var(--border-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text-primary);cursor:pointer}
+#controls button:hover{background:var(--surface-1)}
+#game-area{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:16px;align-items:start;width:min(100%,760px)}
+#game-area.gote-view #hand-gote-area{grid-column:3}
+#game-area.gote-view #board-area{grid-column:2;grid-row:1}
+#game-area.gote-view #hand-sente-area{grid-column:1;grid-row:1}
+.hand-area{display:flex;flex-direction:column;gap:6px;min-width:0;width:100%}
+.hand-label{font-size:11px;color:var(--text-muted);text-align:center}
+.hand-pieces{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;min-height:30px}
+.hand-piece{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;border:0.5px solid var(--border);border-radius:4px;cursor:pointer;background:var(--surface-2);position:relative;user-select:none}
+.hand-piece.selected{border-color:var(--border-accent);background:var(--bg-accent)}
+.hand-piece .cnt{position:absolute;bottom:1px;right:2px;font-size:9px;color:var(--text-muted)}
+#board-wrap{position:relative}
+#board{border-collapse:collapse;border:1.5px solid var(--border-stronger)}
+#board td{width:44px;height:44px;border:0.5px solid var(--border-strong);text-align:center;vertical-align:middle;cursor:pointer;position:relative;font-size:20px;user-select:none;background:var(--surface-2)}
+#board td.highlight{background:var(--bg-accent)!important}
+#board td.selected{background:var(--bg-accent)!important;border-color:var(--border-accent)}
+#board td.last-move{background:var(--bg-warning)!important}
+#board td:hover{background:var(--surface-1)}
+.piece-sente,.piece-gote{color:#1a1a1a;text-shadow:none}
+.piece-reverse{transform:rotate(180deg);display:inline-block}
+.piece-promoted{color:#cc2200}
+.coord-row{display:flex;justify-content:space-around;padding:0 2px}
+.coord-col{display:flex;flex-direction:column;justify-content:space-around;padding:2px 0;font-size:10px;color:var(--text-muted);text-align:right;min-width:16px}
+#thinking{font-size:12px;color:var(--text-muted);min-height:16px;text-align:center}
+</style>
+
+<div id="app">
+<h2>将棋AI — ブラウザ完全ローカル動作</h2>
+<div id="status">先手（あなた）の番です</div>
+<div id="controls">
+  <label>AIの強さ:</label>
+  <select id="depth">
+    <option value="1">1手読み（最速）</option>
+    <option value="3" selected>3手読み（標準）</option>
+  </select>
+  <label>あなたは:</label>
+  <select id="side">
+    <option value="sente">先手</option>
+    <option value="gote">後手</option>
+  </select>
+  <button onclick="initGame()">最初から</button>
+</div>
+<div id="thinking"></div>
+<div id="game-area">
+  <div class="hand-area" id="hand-gote-area">
+    <div class="hand-label">後手の持ち駒</div>
+    <div class="hand-pieces" id="hand-gote"></div>
+  </div>
+  <div id="board-area">
+    <div class="coord-row" id="coord-top"></div>
+    <div style="display:flex">
+      <table id="board"></table>
+      <div class="coord-col" id="coord-side"></div>
+    </div>
+  </div>
+  <div class="hand-area" id="hand-sente-area">
+    <div class="hand-label">先手の持ち駒</div>
+    <div class="hand-pieces" id="hand-sente"></div>
+  </div>
+</div>
+</div>
+
+<script>
+const PIECES = {
+  FU:1, KYO:2, KEI:3, GIN:4, KIN:5, KAKU:6, HI:7, OU:8,
+  TO:9, NKYO:10, NKEI:11, NGIN:12, UMA:13, RYU:14
+};
+const PNAMES = {1:'歩',2:'香',3:'桂',4:'銀',5:'金',6:'角',7:'飛',8:'玉',9:'と',10:'杏',11:'圭',12:'全',13:'馬',14:'龍'};
+const PROMO = {1:9,2:10,3:11,4:12,6:13,7:14};
+const UNPROM = {9:1,10:2,11:3,12:4,13:6,14:7};
+
+// 先手=1 後手=-1
+// board[row][col] = {piece, side} | null
+let board, turn, sentHand, goteHand, selected, selectedType, gameOver, lastMove;
+let playerSide = 1;
+let aiWorker=null;
+let aiRequestId=0;
+
+function initGame(){
+  if(aiWorker){
+    aiWorker.terminate();
+    aiWorker=null;
+  }
+  board = Array.from({length:9},()=>Array(9).fill(null));
+  // 後手陣（上）row 0,1,2
+  const backRow = [PIECES.KYO,PIECES.KEI,PIECES.GIN,PIECES.KIN,PIECES.OU,PIECES.KIN,PIECES.GIN,PIECES.KEI,PIECES.KYO];
+  for(let c=0;c<9;c++){board[0][c]={piece:backRow[c],side:-1}}
+  board[1][1]={piece:PIECES.HI,side:-1};board[1][7]={piece:PIECES.KAKU,side:-1};
+  for(let c=0;c<9;c++){board[2][c]={piece:PIECES.FU,side:-1}}
+  // 先手陣（下）row 6,7,8
+  for(let c=0;c<9;c++){board[6][c]={piece:PIECES.FU,side:1}}
+  board[7][7]={piece:PIECES.HI,side:1};board[7][1]={piece:PIECES.KAKU,side:1};
+  for(let c=0;c<9;c++){board[8][c]={piece:backRow[8-c],side:1}}
+  sentHand={};goteHand={};selected=null;selectedType=null;gameOver=false;lastMove=null;
+  turn=1;
+  playerSide = document.getElementById('side').value==='sente'?1:-1;
+  render();
+  if(playerSide !== 1){
+    setTimeout(aiMove,300);
+  }
+}
+
+function getHand(side){return side===1?sentHand:goteHand}
+
+function addHand(side,piece){
+  const up = UNPROM[piece]||piece;
+  const h=getHand(side);
+  h[up]=(h[up]||0)+1;
+}
+
+function getMoves(b,side,sh,gh,filterCheck=true){
+  const moves=[];
+  const hand=side===1?sh:gh;
+  // 盤上の駒の移動
+  for(let r=0;r<9;r++){
+    for(let c=0;c<9;c++){
+      const cell=b[r][c];
+      if(!cell||cell.side!==side)continue;
+      const dests=getPieceDests(b,r,c,cell.piece,side);
+      for(const [dr,dc] of dests){
+        const canProm=canPromote(cell.piece,r,dr,side);
+        const mustProm=mustPromote(cell.piece,dr,side);
+        if(mustProm){
+          moves.push({from:[r,c],to:[dr,dc],promo:true});
+        } else {
+          moves.push({from:[r,c],to:[dr,dc],promo:false});
+          if(canProm)moves.push({from:[r,c],to:[dr,dc],promo:true});
+        }
+      }
+    }
+  }
+  // 持ち駒の打ち
+  for(const [p,cnt] of Object.entries(hand)){
+    if(cnt<=0)continue;
+    const piece=parseInt(p);
+    for(let r=0;r<9;r++){
+      for(let c=0;c<9;c++){
+        if(b[r][c])continue;
+        if(!canDrop(piece,r,c,b,side))continue;
+        moves.push({drop:true,piece,to:[r,c]});
+      }
+    }
+  }
+  const legalMoves=filterCheck?moves.filter(m=>!moveLeavesCheck(b,m,side,sh,gh)):moves;
+  return orderMoves(b,legalMoves);
+}
+
+function moveOrderingScore(b,m){
+  let score=0;
+  if(!m.drop){
+    const captured=b[m.to[0]][m.to[1]];
+    if(captured){
+      // MVV-LVA: valuable captures first, with a small preference for
+      // using a lower-value attacker when captures are otherwise equal.
+      const victimValue=PIECE_VALUE[captured.piece]||0;
+      const attackerValue=PIECE_VALUE[b[m.from[0]][m.from[1]].piece]||0;
+      score+=100000+victimValue*100-attackerValue;
+    }
+    if(m.promo)score+=50000;
+  }
+  return score;
+}
+
+function orderMoves(b,moves){
+  return moves
+    .map((move,index)=>({move,index,score:moveOrderingScore(b,move)}))
+    .sort((a,b)=>b.score-a.score||a.index-b.index)
+    .map(entry=>entry.move);
+}
+
+function moveLeavesCheck(b,m,side,sh,gh){
+  const [nb,nsh,ngh]=applyMove(b,m,side,sh,gh);
+  return isInCheck(nb,side,nsh,ngh);
+}
+
+function isInCheck(b,side,sh,gh){
+  let kr=-1,kc=-1;
+  for(let r=0;r<9;r++)for(let c=0;c<9;c++){
+    const cell=b[r][c];
+    if(cell&&cell.side===side&&(cell.piece===PIECES.OU)){{kr=r;kc=c;}}
+  }
+  if(kr===-1)return true;
+  const opp=-side;
+  const oppMoves=getMoves(b,opp,sh,gh,false);
+  return oppMoves.some(m=>m.to[0]===kr&&m.to[1]===kc);
+}
+
+function canDrop(piece,r,c,b,side){
+  if(piece===PIECES.FU){
+    // 二歩チェック
+    for(let rr=0;rr<9;rr++){
+      const cell=b[rr][c];
+      if(cell&&cell.side===side&&cell.piece===PIECES.FU)return false;
+    }
+    // 打ち歩詰め簡易チェックは省略
+    const lastRow=side===1?0:8;
+    if(r===lastRow)return false;
+  }
+  if(piece===PIECES.KYO){
+    const lastRow=side===1?0:8;
+    if(r===lastRow)return false;
+  }
+  if(piece===PIECES.KEI){
+    if(side===1&&r<=1)return false;
+    if(side===-1&&r>=7)return false;
+  }
+  return true;
+}
+
+function canPromote(piece,fromR,toR,side){
+  if(PROMO[piece]===undefined)return false;
+  const promoZone=side===1?[0,1,2]:[6,7,8];
+  return promoZone.includes(fromR)||promoZone.includes(toR);
+}
+
+function mustPromote(piece,toR,side){
+  if(piece===PIECES.FU||piece===PIECES.KYO){
+    if(side===1&&toR===0)return true;
+    if(side===-1&&toR===8)return true;
+  }
+  if(piece===PIECES.KEI){
+    if(side===1&&toR<=1)return true;
+    if(side===-1&&toR>=7)return true;
+  }
+  return false;
+}
+
+function getPieceDests(b,r,c,piece,side,includeOwn=false){
+  const d=[];
+  const s=side;
+  const fwd=s===1?-1:1;
+  const add=(dr,dc)=>{
+    const nr=r+dr,nc=c+dc;
+    if(nr<0||nr>8||nc<0||nc>8)return false;
+    const cell=b[nr][nc];
+    if(cell&&cell.side===s){
+      if(includeOwn)d.push([nr,nc]);
+      return false;
+    }
+    d.push([nr,nc]);
+    return !cell;
+  };
+  const slide=(dr,dc)=>{
+    for(let i=1;i<9;i++){if(!add(dr*i,dc*i))break;}
+  };
+  const kinMoves=()=>{
+    [[fwd,0],[fwd,-1],[fwd,1],[0,-1],[0,1],[-fwd,0]].forEach(([dr,dc])=>add(dr,dc));
+  };
+  switch(piece){
+    case PIECES.FU:add(fwd,0);break;
+    case PIECES.KYO:slide(fwd,0);break;
+    case PIECES.KEI:add(2*fwd,-1);add(2*fwd,1);break;
+    case PIECES.GIN:[[fwd,-1],[fwd,0],[fwd,1],[-fwd,-1],[-fwd,1]].forEach(([dr,dc])=>add(dr,dc));break;
+    case PIECES.KIN:case PIECES.TO:case PIECES.NKYO:case PIECES.NKEI:case PIECES.NGIN:kinMoves();break;
+    case PIECES.KAKU:[[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([dr,dc])=>slide(dr,dc));break;
+    case PIECES.HI:[[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr,dc])=>slide(dr,dc));break;
+    case PIECES.UMA:[[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([dr,dc])=>slide(dr,dc));[[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr,dc])=>add(dr,dc));break;
+    case PIECES.RYU:[[-1,0],[1,0],[0,-1],[0,1]].forEach(([dr,dc])=>slide(dr,dc));[[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([dr,dc])=>add(dr,dc));break;
+    case PIECES.OU:[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]].forEach(([dr,dc])=>add(dr,dc));break;
+  }
+  return d;
+}
+
+function applyMove(b,m,side,sh,gh){
+  const nb=b.map(r=>r.map(c=>c?{...c}:null));
+  const nsh={...sh};const ngh={...gh};
+  if(m.drop){
+    const h=side===1?nsh:ngh;
+    h[m.piece]=(h[m.piece]||0)-1;
+    nb[m.to[0]][m.to[1]]={piece:m.piece,side};
+  } else {
+    const [fr,fc]=m.from;const [tr,tc]=m.to;
+    const cap=nb[tr][tc];
+    if(cap){
+      const h=side===1?nsh:ngh;
+      const up=UNPROM[cap.piece]||cap.piece;
+      h[up]=(h[up]||0)+1;
+    }
+    let piece=nb[fr][fc].piece;
+    if(m.promo)piece=PROMO[piece]||piece;
+    nb[tr][tc]={piece,side};
+    nb[fr][fc]=null;
+  }
+  return [nb,nsh,ngh];
+}
+
+const PIECE_VALUE={1:100,2:250,3:280,4:350,5:450,6:700,7:800,8:20000,9:450,10:550,11:560,12:550,13:1000,14:1100};
+function createAIWorker(){
+  if(aiWorker)aiWorker.terminate();
+  const wasmJsUrl=new URL('pkg/shogi_wasm.js',document.baseURI).href;
+  const wasmFileUrl=new URL('pkg/shogi_wasm_bg.wasm',document.baseURI).href;
+  const workerCode=`
+    importScripts(${JSON.stringify(wasmJsUrl)});
+    let ready=false;
+    const pending=[];
+    const runSearch=data=>{
+      try{
+        const result=wasm_bindgen.find_best_move(
+          JSON.stringify(data.board),
+          JSON.stringify(data.sentHand),
+          JSON.stringify(data.goteHand),
+          data.depth,
+          data.side
+        );
+        self.postMessage({bestMove:JSON.parse(result)});
+      }catch(error){
+        self.postMessage({error:String(error)});
+      }
+    };
+    self.onmessage=({data})=>{
+      if(ready)runSearch(data);
+      else pending.push(data);
+    };
+    wasm_bindgen({module_or_path:${JSON.stringify(wasmFileUrl)}}).then(()=>{
+      ready=true;
+      pending.splice(0).forEach(runSearch);
+    }).catch(error=>self.postMessage({error:String(error)}));
+  `;
+  const blob=new Blob([workerCode],{type:'application/javascript'});
+  aiWorker=new Worker(URL.createObjectURL(blob));
+  aiWorker.onmessage=({data})=>{
+    if(data.error){
+      document.getElementById('thinking').textContent='';
+      document.getElementById('status').textContent='AIでエラーが発生しました。ビルドを確認してください。';
+      gameOver=true;
+      return;
+    }
+    handleAIResult(data.bestMove);
+  };
+  aiWorker.onerror=()=>{
+    document.getElementById('thinking').textContent='';
+    document.getElementById('status').textContent='AIでエラーが発生しました。最初からやり直してください。';
+    gameOver=true;
+  };
+}
+
+function handleAIResult(bestMove){
+  if(gameOver||turn===playerSide)return;
+  if(bestMove){
+    const [nb,nsh,ngh]=applyMove(board,bestMove,-playerSide,sentHand,goteHand);
+    board=nb;sentHand=nsh;goteHand=ngh;
+    lastMove=bestMove.to;
+    turn=playerSide;
+  }
+  document.getElementById('thinking').textContent='';
+  checkGameState();
+  render();
+}
+
+function aiMove(){
+  if(gameOver)return;
+  const depth=parseInt(document.getElementById('depth').value);
+  const side=-playerSide;
+  document.getElementById('thinking').textContent='AIが考え中...';
+  if(!aiWorker)createAIWorker();
+  aiRequestId++;
+  aiWorker.postMessage({board,sentHand,goteHand,depth,side,requestId:aiRequestId});
+}
+
+function checkGameState(){
+  const moves=getMoves(board,turn,sentHand,goteHand);
+  if(moves.length===0){
+    const winner=turn===playerSide?'AIの勝ち！':'あなたの勝ち！';
+    document.getElementById('status').textContent=winner;
+    gameOver=true;
+    return;
+  }
+  const side=turn===playerSide?'あなた（'+(turn===1?'先手':'後手')+'）':'AI（'+(turn===1?'先手':'後手')+'）';
+  const inCheck=isInCheck(board,turn,sentHand,goteHand);
+  document.getElementById('status').textContent=side+'の番です'+(inCheck?' — 王手！':'');
+}
+
+function handleCellClick(r,c){
+  if(gameOver)return;
+  if(turn!==playerSide)return;
+  const cell=board[r][c];
+  if(selectedType==='hand'){
+    // 持ち駒を打つ
+    const h=getHand(playerSide);
+    if((h[selected]||0)>0){
+      const m={drop:true,piece:selected,to:[r,c]};
+      if(canDrop(selected,r,c,board,playerSide)&&!board[r][c]&&!moveLeavesCheck(board,m,playerSide,sentHand,goteHand)){
+        const [nb,nsh,ngh]=applyMove(board,m,playerSide,sentHand,goteHand);
+        board=nb;sentHand=nsh;goteHand=ngh;
+        lastMove=[r,c];selected=null;selectedType=null;turn=-playerSide;
+        checkGameState();render();
+        if(!gameOver)setTimeout(aiMove,200);
+        return;
+      }
+    }
+    selected=null;selectedType=null;render();return;
+  }
+  if(selected){
+    const [sr,sc]=selected;
+    if(sr===r&&sc===c){selected=null;selectedType=null;render();return;}
+    const moves=getMoves(board,playerSide,sentHand,goteHand).filter(m=>!m.drop&&m.from[0]===sr&&m.from[1]===sc&&m.to[0]===r&&m.to[1]===c);
+    if(moves.length>0){
+      let m=moves[0];
+      if(moves.length>1){
+        // 成れる場合は確認（簡易：自動で成る）
+        m=moves.find(x=>x.promo)||moves[0];
+      }
+      const [nb,nsh,ngh]=applyMove(board,m,playerSide,sentHand,goteHand);
+      board=nb;sentHand=nsh;goteHand=ngh;
+      lastMove=[r,c];selected=null;selectedType=null;turn=-playerSide;
+      checkGameState();render();
+      if(!gameOver)setTimeout(aiMove,200);
+      return;
+    }
+    if(cell&&cell.side===playerSide){selected=[r,c];selectedType='board';render();return;}
+    selected=null;selectedType=null;render();return;
+  }
+  if(cell&&cell.side===playerSide){selected=[r,c];selectedType='board';render();return;}
+}
+
+function handleHandClick(side,piece){
+  if(gameOver||turn!==playerSide||side!==playerSide)return;
+  const h=getHand(playerSide);
+  if((h[piece]||0)<=0)return;
+  selected=piece;selectedType='hand';render();
+}
+
+function getHighlights(){
+  if(!selected||selectedType!=='board')return[];
+  const [sr,sc]=selected;
+  const moves=getMoves(board,playerSide,sentHand,goteHand).filter(m=>!m.drop&&m.from[0]===sr&&m.from[1]===sc);
+  return moves.map(m=>m.to);
+}
+
+function render(){
+  document.getElementById('game-area').classList.toggle('gote-view',playerSide===-1);
+  const tbl=document.getElementById('board');
+  tbl.innerHTML='';
+  const highlights=getHighlights();
+  const isFlipped=playerSide===-1;
+  for(let r=0;r<9;r++){
+    const tr=document.createElement('tr');
+    for(let c=0;c<9;c++){
+      const dr=isFlipped?8-r:r;
+      const dc=isFlipped?8-c:c;
+      const td=document.createElement('td');
+      const cell=board[dr][dc];
+      if(cell){
+        const span=document.createElement('span');
+        span.textContent=PNAMES[cell.piece]||'?';
+        span.className=(cell.side===1?'piece-sente':'piece-gote')+(cell.piece>=PIECES.TO?' piece-promoted':'')+(cell.side===playerSide?'':' piece-reverse');
+        td.appendChild(span);
+      }
+      const isSelected=selectedType==='board'&&selected&&selected[0]===dr&&selected[1]===dc;
+      const isHL=highlights.some(([hr,hc])=>hr===dr&&hc===dc);
+      const isLast=lastMove&&lastMove[0]===dr&&lastMove[1]===dc;
+      if(isSelected)td.classList.add('selected');
+      else if(isHL)td.classList.add('highlight');
+      else if(isLast)td.classList.add('last-move');
+      td.onclick=()=>handleCellClick(dr,dc);
+      tr.appendChild(td);
+    }
+    tbl.appendChild(tr);
+  }
+  // 持ち駒
+  renderHand('hand-sente',1);
+  renderHand('hand-gote',-1);
+}
+
+function renderHand(id,side){
+  const el=document.getElementById(id);
+  el.innerHTML='';
+  const h=getHand(side);
+  const order=[PIECES.HI,PIECES.KAKU,PIECES.KIN,PIECES.GIN,PIECES.KEI,PIECES.KYO,PIECES.FU];
+  for(const p of order){
+    const cnt=h[p]||0;
+    if(cnt<=0)continue;
+    const div=document.createElement('div');
+    div.className='hand-piece';
+    if(selectedType==='hand'&&selected===p&&side===playerSide)div.classList.add('selected');
+    const span=document.createElement('span');
+    span.textContent=PNAMES[p];
+    span.style.fontSize='14px';
+    if(side!==playerSide){span.style.transform='rotate(180deg)';span.style.display='inline-block';span.style.color='#1a1a1a';}
+    div.appendChild(span);
+    if(cnt>1){const c=document.createElement('span');c.className='cnt';c.textContent=cnt;div.appendChild(c);}
+    div.onclick=()=>handleHandClick(side,p);
+    el.appendChild(div);
+  }
+}
+
+// 座標ラベル
+const topDiv=document.getElementById('coord-top');
+const sideDiv=document.getElementById('coord-side');
+for(let i=9;i>=1;i--){const s=document.createElement('span');s.style.cssText='font-size:10px;color:var(--text-muted);width:44px;text-align:center;display:inline-block';s.textContent=i;topDiv.appendChild(s);}
+for(let i=1;i<=9;i++){const s=document.createElement('div');s.style.cssText='font-size:10px;color:var(--text-muted);height:44px;display:flex;align-items:center;padding-left:4px';s.textContent='一二三四五六七八九'.charAt(i-1);sideDiv.appendChild(s);}
+
+initGame();
+</script>
+</body>
+</html>
