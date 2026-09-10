@@ -2,6 +2,7 @@
 name = "shogi_wasm"
 version = "0.1.0"
 edition = "2021"
+description = "Rust and WebAssembly shogi engine"
 
 [lib]
 crate-type = ["cdylib"]

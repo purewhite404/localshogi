@@ -1,5 +1,6 @@
 # Rust build artifacts
 target/
+www/pkg/
 
 # Local editor and OS files
 .vscode/
