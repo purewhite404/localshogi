@@ -1,0 +1,10 @@
+{
+  "name": "shogi_wasm",
+  "description": "Rust and WebAssembly shogi engine",
+  "version": "0.1.0",
+  "files": [
+    "shogi_wasm_bg.wasm",
+    "shogi_wasm.js"
+  ],
+  "browser": "shogi_wasm.js"
+}
