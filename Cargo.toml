@@ -1,18 +1,55 @@
 [package]
 name = "shogi_wasm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Rust and WebAssembly shogi engine"
+description = "Rust and WebAssembly shogi engine with an NNUE evaluation"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+nnue = []
+native = ["rayon", "memmap2", "rand_xoshiro", "clap"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 wasm-bindgen = "0.2"
+rayon = { version = "1", optional = true }
+memmap2 = { version = "0.9", optional = true }
+rand_xoshiro = { version = "0.6", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+
+[[bin]]
+name = "perft_bin"
+path = "src/bin/perft_bin.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "gen"
+path = "src/bin/gen.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "train"
+path = "src/bin/train.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "match_bin"
+path = "src/bin/match_bin.rs"
+required-features = ["native"]
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
 codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
