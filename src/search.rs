@@ -12,6 +12,8 @@ use crate::types::*;
 
 pub const MAX_PLY: usize = 128;
 const DRAW: i32 = 0;
+/// Total check-extension plies allowed along a single search path (see negamax).
+const EXT_CAP: i32 = 24;
 const INF: i32 = MATE + 1000;
 
 pub trait Clock {
@@ -216,7 +218,7 @@ impl<'a, E: Evaluator, C: Clock> Searcher<'a, E, C> {
         best
     }
 
-    fn negamax(&mut self, depth: i32, ply: u32, mut alpha: i32, mut beta: i32) -> i32 {
+    fn negamax(&mut self, depth: i32, ply: u32, mut alpha: i32, mut beta: i32, ext_used: i32) -> i32 {
         self.nodes += 1;
         if self.nodes & 1023 == 0 {
             self.check_time();
@@ -269,7 +271,7 @@ impl<'a, E: Evaluator, C: Clock> Searcher<'a, E, C> {
         if !in_check && depth >= 3 && ply > 0 && beta < MATE_IN_MAX_PLY && has_non_pawn_material(self.pos, self.pos.side_to_move()) {
             let r = 3 + depth / 6;
             self.pos.do_null_move();
-            let score = -self.negamax(depth - 1 - r, ply + 1, -beta, -beta + 1);
+            let score = -self.negamax(depth - 1 - r, ply + 1, -beta, -beta + 1, ext_used);
             self.pos.undo_null_move();
             if self.stopped {
                 return 0;
@@ -308,20 +310,28 @@ impl<'a, E: Evaluator, C: Clock> Searcher<'a, E, C> {
             self.make_move(mv);
             let gives_check = self.pos.in_check();
             let mut new_depth = depth - 1;
-            if gives_check && depth < 16 {
+            // Check extensions are unbounded in principle (shogi has far more checks
+            // than chess, especially with big hands), so cap the TOTAL extensions used
+            // along one search path — otherwise a drop-heavy endgame can blow the
+            // effective depth up by many times over. EXT_CAP is generous enough that it
+            // essentially never limits a normal tactical line, only pathological ones.
+            let child_ext_used = if gives_check && depth < 16 && ext_used < EXT_CAP {
                 new_depth += 1;
-            }
+                ext_used + 1
+            } else {
+                ext_used
+            };
 
             let score = if i >= 4 && depth >= 3 && quiet && !gives_check {
                 let reduced = (new_depth - 1).max(0);
-                let s = -self.negamax(reduced, ply + 1, -alpha - 1, -alpha);
+                let s = -self.negamax(reduced, ply + 1, -alpha - 1, -alpha, child_ext_used);
                 if s > alpha && !self.stopped {
-                    -self.negamax(new_depth, ply + 1, -beta, -alpha)
+                    -self.negamax(new_depth, ply + 1, -beta, -alpha, child_ext_used)
                 } else {
                     s
                 }
             } else {
-                -self.negamax(new_depth, ply + 1, -beta, -alpha)
+                -self.negamax(new_depth, ply + 1, -beta, -alpha, child_ext_used)
             };
 
             self.unmake_move();
@@ -424,7 +434,7 @@ pub fn search<E: Evaluator, C: Clock>(
 
     for depth in 1..=max_depth {
         s.seldepth = 0;
-        let score = s.negamax(depth as i32, 0, -INF, INF);
+        let score = s.negamax(depth as i32, 0, -INF, INF, 0);
         if s.stopped && depth > 1 {
             best.aborted = true;
             break;

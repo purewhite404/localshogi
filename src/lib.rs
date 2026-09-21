@@ -16,5 +16,8 @@ pub mod zobrist;
 pub mod eval;
 pub mod search;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_support;
+
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_api;
