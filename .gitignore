@@ -1,6 +1,18 @@
 # Rust build artifacts
 target/
 
+# Generated wasm package (rebuilt by ./build_wasm.sh and by CI)
+www/pkg/
+
+# Training run outputs (intermediate checkpoints/data); the shipped net under
+# nets/ is committed separately.
+runs/
+data/
+
+# Float (f32) training checkpoints for warm-starting the next net; only the quantized
+# nets/*.bin the engine actually loads are committed.
+nets/*.fnet
+
 # Local editor and OS files
 .vscode/
 .idea/
