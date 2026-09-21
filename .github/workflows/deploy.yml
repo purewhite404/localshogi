@@ -34,6 +34,9 @@ jobs:
       - name: Perft depth 5 (~20M nodes)
         run: cargo test --release --test perft -- --ignored perft_startpos_depth_5
 
+      - name: Native tools compile (gen/train/match_bin/bench/perft_bin)
+        run: cargo build --release --features native
+
   build:
     needs: test
     runs-on: ubuntu-latest

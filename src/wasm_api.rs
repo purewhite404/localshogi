@@ -4,7 +4,7 @@
 //! arrays, never JSON — see the packed `Move` encoding in `mov.rs`.
 use wasm_bindgen::prelude::*;
 
-use crate::eval::HandCrafted;
+use crate::eval::AnyEval;
 use crate::mov::Move;
 use crate::movegen::generate_legal;
 use crate::position::{Position, Repetition};
@@ -12,6 +12,47 @@ use crate::search::{search as run_search, Clock, Limits};
 use crate::sfen::{move_to_usi, parse_sfen, parse_usi_move, to_sfen};
 use crate::tt::TranspositionTable;
 use crate::types::*;
+
+#[cfg(feature = "nnue")]
+static EMBEDDED_NET: &[u8] = include_bytes!("../nets/current.bin");
+
+/// The default evaluator. As of the NNUE net currently embedded, this is the
+/// hand-crafted evaluator: verified by `match_bin` against the trained net (~69K
+/// self-play positions, no king-relative features — see `eval/nnue.rs`'s doc comment)
+/// and the hand-crafted evaluator won convincingly. The NNUE net is still shipped and
+/// selectable via `set_evaluator("nnue")` / the UI's 評価関数 toggle — re-training on
+/// more self-play data is the natural next step, and swapping the default back is a
+/// one-line change here once a net actually wins the match.
+fn default_eval() -> AnyEval {
+    AnyEval::hand_crafted()
+}
+
+/// The embedded NNUE net if it parses and its architecture hash matches this build,
+/// else silently falls back to the hand-crafted evaluator — a stale/corrupt net file
+/// must never turn into a blank page.
+#[cfg(feature = "nnue")]
+fn nnue_eval() -> AnyEval {
+    match crate::eval::network::Network::from_bytes(EMBEDDED_NET) {
+        Ok(net) => AnyEval::nnue(net),
+        Err(e) => {
+            #[cfg(target_arch = "wasm32")]
+            web_sys_console_warn(&format!("embedded NNUE net failed to load, falling back to the hand-crafted evaluator: {e}"));
+            #[cfg(not(target_arch = "wasm32"))]
+            eprintln!("embedded NNUE net failed to load: {e}");
+            AnyEval::hand_crafted()
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn web_sys_console_warn(s: &str) {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = console)]
+        fn warn(s: &str);
+    }
+    warn(s);
+}
 
 #[wasm_bindgen]
 extern "C" {
@@ -23,14 +64,6 @@ struct WasmClock;
 impl Clock for WasmClock {
     fn now_ms(&self) -> f64 {
         perf_now()
-    }
-}
-
-fn cell_byte(p: Piece) -> u8 {
-    if is_none(p) {
-        0
-    } else {
-        piece_type(p) | if piece_color(p) == WHITE { 0x80 } else { 0 }
     }
 }
 
@@ -53,7 +86,7 @@ fn kif_text(pos_before: &Position, mv: Move, mover: Color) -> String {
 pub struct Engine {
     pos: Position,
     tt: TranspositionTable,
-    eval: HandCrafted,
+    eval: AnyEval,
     last_result: Option<crate::search::SearchResult>,
 }
 
@@ -61,7 +94,26 @@ pub struct Engine {
 impl Engine {
     #[wasm_bindgen(constructor)]
     pub fn new(tt_mb: u32) -> Engine {
-        Engine { pos: Position::startpos(), tt: TranspositionTable::new(tt_mb.max(1) as usize), eval: HandCrafted::new(), last_result: None }
+        Engine { pos: Position::startpos(), tt: TranspositionTable::new(tt_mb.max(1) as usize), eval: default_eval(), last_result: None }
+    }
+
+    /// "nnue" or "hc" (hand-crafted, the default — see `default_eval`'s doc comment).
+    /// Falls back to hand-crafted if NNUE was requested but the embedded net failed to
+    /// load. Exposed so the UI can offer an A/B toggle.
+    pub fn set_evaluator(&mut self, name: &str) {
+        #[cfg(feature = "nnue")]
+        {
+            self.eval = if name == "nnue" { nnue_eval() } else { AnyEval::hand_crafted() };
+        }
+        #[cfg(not(feature = "nnue"))]
+        {
+            let _ = name;
+            self.eval = AnyEval::hand_crafted();
+        }
+    }
+
+    pub fn evaluator_name(&self) -> String {
+        if self.eval.is_nnue() { "nnue".into() } else { "hc".into() }
     }
 
     pub fn reset(&mut self) {

@@ -8,7 +8,7 @@ description = "Rust and WebAssembly shogi engine with an NNUE evaluation"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = []
+default = ["nnue"]
 nnue = []
 native = ["rayon", "memmap2", "rand_xoshiro", "clap"]
 

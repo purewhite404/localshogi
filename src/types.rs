@@ -152,3 +152,25 @@ pub const fn droppable_row(pt: PieceType, to_row: u8, color: Color) -> bool {
         _ => true,
     }
 }
+
+/// Byte encoding used at the wasm boundary and in training-data records: 0 = empty,
+/// else piece_type | (0x80 if WHITE/gote). Kept here so both `wasm_api.rs` and the
+/// native dataset code use one implementation.
+#[inline]
+pub fn cell_byte(p: Piece) -> u8 {
+    if is_none(p) {
+        0
+    } else {
+        piece_type(p) | if piece_color(p) == WHITE { 0x80 } else { 0 }
+    }
+}
+
+#[inline]
+pub fn piece_from_cell(c: u8) -> Piece {
+    if c == 0 {
+        NO_PIECE
+    } else {
+        let color = if c & 0x80 != 0 { WHITE } else { BLACK };
+        make_piece(color, c & 0x7F)
+    }
+}

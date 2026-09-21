@@ -3,6 +3,7 @@ import { bootMainThread, simd128Supported, PIECES, PNAMES, HAND_ORDER, sqOf, row
 const $ = (id) => document.getElementById(id);
 const depthSelect = $('depth');
 const sideSelect = $('side');
+const evaluatorSelect = $('evaluator');
 const restartBtn = $('restart-btn');
 const statusEl = $('status');
 const thinkingEl = $('thinking');
@@ -97,7 +98,7 @@ async function scheduleAiMove() {
   state.searching = true;
   thinkingEl.textContent = 'AIが考え中…';
   const historyBuf = Uint32Array.from(state.history);
-  worker.postMessage({ t: 'search', id, rootSfen: state.rootSfen, history: historyBuf, limit: parseLimit() }, [historyBuf.buffer]);
+  worker.postMessage({ t: 'search', id, rootSfen: state.rootSfen, history: historyBuf, limit: parseLimit(), evaluator: evaluatorSelect.value }, [historyBuf.buffer]);
 }
 
 function handleAiResult(data) {

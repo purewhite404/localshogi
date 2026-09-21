@@ -36,6 +36,11 @@ impl Limits {
     pub fn movetime(ms: u32) -> Limits {
         Limits { max_depth: 0, movetime_ms: ms, node_limit: ms as u64 * 2_000_000 }
     }
+    /// Fixed node budget, no depth/time cap — used by self-play data generation so
+    /// throughput is predictable regardless of position complexity.
+    pub fn nodes(n: u64) -> Limits {
+        Limits { max_depth: 0, movetime_ms: 0, node_limit: n }
+    }
 }
 
 #[derive(Clone)]

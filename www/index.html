@@ -30,6 +30,11 @@
       <option value="0">先手</option>
       <option value="1">後手</option>
     </select>
+    <label>評価関数:</label>
+    <select id="evaluator">
+      <option value="hc" selected>標準</option>
+      <option value="nnue">NNUE（実験的・現状は弱いです）</option>
+    </select>
     <button id="restart-btn" disabled>最初から</button>
   </div>
   <div id="thinking"></div>

@@ -37,6 +37,7 @@ self.onmessage = async ({ data }) => {
     }
     if (data.t === 'search') {
       resync(data.rootSfen, Array.from(data.history));
+      if (data.evaluator && engine.evaluator_name() !== data.evaluator) engine.set_evaluator(data.evaluator);
       const onIter = (depth, seldepth, scoreCp, mateIn, nodes, elapsedMs) => {
         self.postMessage({ t: 'info', id: data.id, depth, seldepth, scoreCp, mateIn, nodes, elapsedMs });
       };
