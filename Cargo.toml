@@ -19,6 +19,9 @@ memmap2 = { version = "0.9", optional = true }
 rand_xoshiro = { version = "0.6", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+
 [[bin]]
 name = "perft_bin"
 path = "src/bin/perft_bin.rs"
@@ -50,6 +53,9 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3", "--enable-simd", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals"]
 
 [profile.dev]
 opt-level = 1

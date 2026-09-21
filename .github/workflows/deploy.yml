@@ -2,39 +2,79 @@ name: Build and deploy
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: native
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Unit tests (native)
+        run: cargo test --release
+
+      - name: Perft (correctness gate, depths 1-4)
+        run: cargo test --release --test perft
+
+      - name: Perft depth 5 (~20M nodes)
+        run: cargo test --release --test perft -- --ignored perft_startpos_depth_5
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        uses: jetli/wasm-pack-action@v0.4.0
+      - uses: Swatinem/rust-cache@v2
         with:
-          version: latest
+          key: wasm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
 
-      - name: Build Wasm
+      - name: Build wasm
+        run: ./build_wasm.sh
+
+      - name: Node integration check (engine.js against the real wasm output)
+        run: node tools/selfplay-check.mjs
+        env:
+          SELFPLAY_GAMES: 30
+          SELFPLAY_PLIES: 300
+
+      - name: Report wasm size
         run: |
-          wasm-pack build --release --target no-modules --out-dir www/pkg --no-typescript
-          rm -f www/pkg/.gitignore
+          echo "### wasm size" >> "$GITHUB_STEP_SUMMARY"
+          ls -l www/pkg/shogi_engine_bg.wasm | awk '{print "raw: " $5 " bytes"}' >> "$GITHUB_STEP_SUMMARY"
+          gzip -9 -c www/pkg/shogi_engine_bg.wasm | wc -c | awk '{print "gzip: " $1 " bytes"}' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: ./www
+          path: ./www
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

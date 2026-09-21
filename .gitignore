@@ -1,6 +1,14 @@
 # Rust build artifacts
 target/
 
+# Generated wasm package (rebuilt by ./build_wasm.sh and by CI)
+www/pkg/
+
+# Training run outputs (intermediate checkpoints/data); the shipped net under
+# nets/ is committed separately.
+runs/
+data/
+
 # Local editor and OS files
 .vscode/
 .idea/
