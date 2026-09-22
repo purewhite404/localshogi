@@ -61,6 +61,9 @@ jobs:
           SELFPLAY_GAMES: 30
           SELFPLAY_PLIES: 300
 
+      - name: Async init() path check (what www/engine.js and worker.js actually use)
+        run: node tools/async-init-check.mjs
+
       - name: Report wasm size
         run: |
           echo "### wasm size" >> "$GITHUB_STEP_SUMMARY"

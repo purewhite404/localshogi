@@ -30,12 +30,11 @@ const state = {
 };
 
 let mainEngine = null;
-let wasmModule = null;
 let worker = null;
 let workerReadyResolve = null;
 let workerReadyPromise = null;
 
-function spawnWorker(module) {
+function spawnWorker() {
   workerReadyPromise = new Promise((resolve) => { workerReadyResolve = resolve; });
   const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
   w.onmessage = ({ data }) => onWorkerMessage(data);
@@ -46,7 +45,7 @@ function spawnWorker(module) {
     state.gameOver = true;
   };
   w.onmessageerror = (e) => console.error('worker message error', e);
-  w.postMessage({ t: 'init', module });
+  w.postMessage({ t: 'init' });
   return w;
 }
 
@@ -81,7 +80,7 @@ async function abortSearch() {
     state.searching = false;
     thinkingEl.textContent = '';
     worker.terminate();
-    worker = spawnWorker(wasmModule);
+    worker = spawnWorker();
     await workerReadyPromise;
   }
 }
@@ -490,10 +489,9 @@ async function boot() {
     return;
   }
   try {
-    const { module, engine } = await bootMainThread();
-    wasmModule = module;
+    const { engine } = await bootMainThread();
     mainEngine = engine;
-    worker = spawnWorker(module);
+    worker = spawnWorker();
     await workerReadyPromise;
   } catch (e) {
     console.error(e);

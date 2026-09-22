@@ -1,7 +1,21 @@
-// DOM-free wasm facade: loading, packed-move helpers, and the compile-once /
-// instantiate-twice (main thread + worker) pattern. Deliberately free of any `window`/
-// `document` access so it can also be exercised from a plain Node script for testing.
-import initSync, { Engine } from './pkg/shogi_engine.js';
+// DOM-free wasm facade: loading and packed-move helpers. Deliberately free of any
+// `window`/`document` access so it can also be exercised from a plain Node script
+// for testing.
+//
+// Uses wasm-bindgen's own async default-export initializer (`init()`) rather than a
+// hand-rolled compile+initSync path. An earlier version compiled the module once on
+// the main thread and shared it with the worker via structured clone (avoiding a
+// second download/compile) using `initSync()` for synchronous instantiation in both
+// places — but a user hit a reproducible "wasm is undefined" failure inside the
+// generated Engine constructor on the deployed site that survived a cache purge and
+// hard reload, with the served .wasm/.js verified byte-identical to a working local
+// build. The generated `initSync` path never threw, so whatever went wrong left no
+// diagnosable trace. Falling back to the standard async `init()` path (which every
+// wasm-bindgen `--target web` consumer actually exercises, unlike the synchronous
+// variant) trades one extra wasm fetch+compile in the worker for eliminating that
+// whole class of failure. The second fetch should be a cheap HTTP cache hit in
+// practice given GitHub Pages' Cache-Control headers.
+import init, { Engine } from './pkg/shogi_engine.js';
 
 export const PIECES = { FU: 1, KYO: 2, KEI: 3, GIN: 4, KIN: 5, KAKU: 6, HI: 7, OU: 8, TO: 9, NKYO: 10, NKEI: 11, NGIN: 12, UMA: 13, RYU: 14 };
 export const PNAMES = { 1: '歩', 2: '香', 3: '桂', 4: '銀', 5: '金', 6: '角', 7: '飛', 8: '玉', 9: 'と', 10: '杏', 11: '圭', 12: '全', 13: '馬', 14: '龍' };
@@ -21,41 +35,14 @@ export const moveIsDrop = (mv) => ((mv >>> 15) & 1) !== 0;
 export const moveMovedType = (mv) => (mv >>> 16) & 0x1f;
 export const moveCapturedType = (mv) => (mv >>> 21) & 0x1f;
 
-const WASM_URL = new URL('./pkg/shogi_engine_bg.wasm', import.meta.url);
+let initPromise = null;
 
-let cachedModulePromise = null;
-
-async function loadModule() {
-  if (cachedModulePromise) return cachedModulePromise;
-  cachedModulePromise = (async () => {
-    if (typeof WebAssembly.compileStreaming === 'function') {
-      try {
-        const resp = await fetch(WASM_URL);
-        if (!resp.ok) throw new Error(`wasm fetch failed: ${resp.status}`);
-        return await WebAssembly.compileStreaming(resp);
-      } catch (e) {
-        // Fall through to the non-streaming path below. Deliberately a FRESH fetch,
-        // not a reuse of the Response above: compileStreaming can partially consume
-        // the body stream before failing (e.g. a MIME-type check failure on some
-        // browsers, or a transfer-encoding quirk through an intermediary proxy), and
-        // calling .arrayBuffer() on an already-read/locked body throws a second,
-        // more confusing error that masks the real one.
-        console.warn('WebAssembly.compileStreaming failed, falling back to compile(arrayBuffer):', e);
-      }
-    }
-    const resp2 = await fetch(WASM_URL);
-    if (!resp2.ok) throw new Error(`wasm fetch failed: ${resp2.status}`);
-    const bytes = await resp2.arrayBuffer();
-    return await WebAssembly.compile(bytes);
-  })();
-  return cachedModulePromise;
-}
-
-/** Loads the wasm module once and creates a main-thread rules-only Engine (no TT). */
+/** Fetches and instantiates the wasm module (once; cached) via wasm-bindgen's own
+ * async initializer, then creates a main-thread rules-only Engine (no TT). */
 export async function bootMainThread() {
-  const module = await loadModule();
-  initSync({ module });
-  return { module, engine: new Engine(0) };
+  if (!initPromise) initPromise = init();
+  await initPromise;
+  return { engine: new Engine(0) };
 }
 
 export function simd128Supported() {

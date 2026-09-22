@@ -3,7 +3,10 @@
 // — every search request carries the full {rootSfen, history}, so the worker's board
 // can never silently diverge from the main thread's; it just resyncs its own do_move
 // calls to match, replaying only the unmatched tail.
-import initSync, { Engine } from './pkg/shogi_engine.js';
+//
+// Uses wasm-bindgen's own async `init()` (a fresh fetch+compile, not a Module shared
+// from the main thread via structured clone) — see engine.js's top comment for why.
+import init, { Engine } from './pkg/shogi_engine.js';
 
 let engine = null;
 let syncedRoot = null;
@@ -30,7 +33,7 @@ function resync(rootSfen, history) {
 self.onmessage = async ({ data }) => {
   try {
     if (data.t === 'init') {
-      initSync({ module: data.module });
+      await init();
       engine = new Engine(16);
       self.postMessage({ t: 'ready' });
       return;
