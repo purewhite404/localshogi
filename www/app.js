@@ -497,7 +497,9 @@ async function boot() {
     await workerReadyPromise;
   } catch (e) {
     console.error(e);
-    loadingTextEl.textContent = 'エンジンの読み込みに失敗しました。./build_wasm.sh を実行してください。';
+    const detail = e && e.message ? e.message : String(e);
+    loadingTextEl.innerHTML = 'エンジンの読み込みに失敗しました。ページを再読み込みしてください。<br>'
+      + `<span style="font-size:11px;opacity:0.7">${detail.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</span>`;
     return;
   }
   renderCoords();

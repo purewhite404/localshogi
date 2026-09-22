@@ -28,15 +28,25 @@ let cachedModulePromise = null;
 async function loadModule() {
   if (cachedModulePromise) return cachedModulePromise;
   cachedModulePromise = (async () => {
-    const resp = await fetch(WASM_URL);
-    if (!resp.ok) throw new Error(`wasm fetch failed: ${resp.status}`);
-    try {
-      return await WebAssembly.compileStreaming(resp);
-    } catch (e) {
-      // Fallback for a dev server that serves .wasm with the wrong MIME type.
-      const bytes = await resp.arrayBuffer();
-      return await WebAssembly.compile(bytes);
+    if (typeof WebAssembly.compileStreaming === 'function') {
+      try {
+        const resp = await fetch(WASM_URL);
+        if (!resp.ok) throw new Error(`wasm fetch failed: ${resp.status}`);
+        return await WebAssembly.compileStreaming(resp);
+      } catch (e) {
+        // Fall through to the non-streaming path below. Deliberately a FRESH fetch,
+        // not a reuse of the Response above: compileStreaming can partially consume
+        // the body stream before failing (e.g. a MIME-type check failure on some
+        // browsers, or a transfer-encoding quirk through an intermediary proxy), and
+        // calling .arrayBuffer() on an already-read/locked body throws a second,
+        // more confusing error that masks the real one.
+        console.warn('WebAssembly.compileStreaming failed, falling back to compile(arrayBuffer):', e);
+      }
     }
+    const resp2 = await fetch(WASM_URL);
+    if (!resp2.ok) throw new Error(`wasm fetch failed: ${resp2.status}`);
+    const bytes = await resp2.arrayBuffer();
+    return await WebAssembly.compile(bytes);
   })();
   return cachedModulePromise;
 }
